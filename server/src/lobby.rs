@@ -7,8 +7,8 @@ use uuid::Uuid;
 type Socket = Recipient<WebSocketMessage>;
 
 pub struct Lobby {
-    sessions: HashMap<Uuid, Socket>,     // self id to self
-    rooms: HashMap<Uuid, HashSet<Uuid>>, // room id to list of users id
+    pub sessions: HashMap<Uuid, Socket>,     // self id to self
+    pub rooms: HashMap<Uuid, HashSet<Uuid>>, // room id to list of users id
 }
 
 impl Default for Lobby {
@@ -25,6 +25,8 @@ impl Lobby {
         if let Some(socket_recipient) = self.sessions.get(id_to) {
           socket_recipient.do_send(WebSocketMessage(message.to_owned()));
         } else {
+            println!("List : {:?}", self.sessions);
+            println!("id : {}", id_to);
             eprintln!("Attempting to send message but couldn't find user id.");
         }
     }
