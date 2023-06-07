@@ -1,66 +1,81 @@
 import { socket } from "./socket";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 function App() {
   const [isConnected, setIsConnected] = useState(false);
+
   const [messages, setMessages] = useState<string[]>([]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const onOpen = () => {
-      console.log("Connected to web socket server.");
-
-      socket.send("Hello world");
+    const onConnect = () => {
+      setIsConnected(true);
     };
 
-    const onClose = () => {
-      console.log("Disconnected from web socket server");
+    const onDisconnect = () => {
+      setIsConnected(false);
     };
 
-    const onMessage = (e: any) => {
-      const data = e.data;
-      setMessages((messages) => [...messages, data]);
+    const onMessage = (message: string) => {
+      setMessages((messages) => [...messages, message]);
     };
 
-    const onError = (error: any) => {
-      console.error("Web socket error : ", error);
-    };
-
-    const callbacks = [
-      ["open", onOpen],
-      ["close", onClose],
-      ["message", onMessage],
-      ["error", onError],
-    ];
-
-    callbacks.forEach(([event, callback]: any) => {
-      socket.addEventListener(event, callback);
-    });
+    socket.on("connection", onConnect);
+    socket.on("disconnection", onDisconnect);
+    socket.on("message", onMessage);
 
     return () => {
-      callbacks.forEach(([event, callback]: any) =>
-        socket.removeEventListener(event, callback)
-      );
+      socket.off("connection", onConnect);
+      socket.off("disconnection", onDisconnect);
+      socket.off("message", onMessage);
     };
   }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    }
+  }, [messages]);
 
   const onSubmit: React.FormEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
     const input: HTMLInputElement = event.currentTarget.message;
-    socket.send(input.value);
+    const message = input.value;
+    if (message) {
+      setMessages([...messages, message]);
+      socket.emit("message", message);
+    }
+  };
+
+  const clearButtonOnClick: React.MouseEventHandler<HTMLButtonElement> = (
+    e
+  ) => {
+    e.preventDefault();
+    setMessages([]);
   };
 
   return (
     <div>
       <form onSubmit={onSubmit}>
         <input type="text" name="message" />
-        <button>send</button>
+        <button type="submit">send</button>
+        <button onClick={clearButtonOnClick}>clear</button>
       </form>
-      <ul>
-        {messages.map((message, i) => (
-          <li key={i}>{message}</li>
-        ))}
-      </ul>
+      {messages.length ? (
+        <div className="messages" ref={containerRef}>
+          <ul>
+            {messages.map((message, i) => (
+              <li key={i} className={i % 2 ? "right" : ""}>
+                <p className="message">{message}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p>No message</p>
+      )}
     </div>
   );
 }

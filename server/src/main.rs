@@ -7,18 +7,16 @@ use actix_cors::Cors;
 use actix_web::{get, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_actors::ws::start as ws_start;
 use lobby::Lobby;
-use uuid::Uuid;
 
 use ws::WebSocketConn;
 
-#[get("/{group_id}")]
+#[get("/ws")]
 pub async fn start_connection(
     req: HttpRequest,
     stream: web::Payload,
-    group_id: web::Path<Uuid>,
     srv: web::Data<Addr<Lobby>>,
 ) -> Result<HttpResponse, Error> {
-    let ws = WebSocketConn::new(group_id.to_owned(), srv.get_ref().clone());
+    let ws = WebSocketConn::new(srv.get_ref().clone());
     let res = ws_start(ws, &req, stream)?;
     Ok(res)
 }

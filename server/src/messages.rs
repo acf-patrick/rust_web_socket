@@ -1,4 +1,6 @@
 use actix::{Message, Recipient};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 /// WebSocketConn responds to this to pipe it through to the actual client
@@ -11,7 +13,6 @@ pub struct WebSocketMessage(pub String);
 #[rtype(result = "()")]
 pub struct Connect {
     pub addr: Recipient<WebSocketMessage>,
-    pub lobby_id: Uuid,
     pub self_id: Uuid,
 }
 
@@ -19,7 +20,6 @@ pub struct Connect {
 #[derive(Message)]
 #[rtype(result = "()")]
 pub struct Disconnect {
-    pub room_id: Uuid,
     pub id: Uuid,
 }
 
@@ -29,6 +29,11 @@ pub struct Disconnect {
 pub struct ClientActorMessage {
     pub id: Uuid,
     pub msg: String,
-    pub room_id: Uuid,
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct EventMessage<T> {
+    pub event: String,
+    pub data: T,
+    pub targets: Vec<String>,
+}

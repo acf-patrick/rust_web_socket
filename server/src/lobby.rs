@@ -1,14 +1,37 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    str::FromStr,
+};
 
-use crate::messages::{ClientActorMessage, Connect, Disconnect, WebSocketMessage};
+use crate::messages::{ClientActorMessage, Connect, Disconnect, EventMessage, WebSocketMessage};
 use actix::{Actor, Context, Handler, Recipient};
+use serde::Serialize;
+use serde_json::json;
 use uuid::Uuid;
 
 type Socket = Recipient<WebSocketMessage>;
 
+// Data types sent with EventMessage
+mod datas {
+    use super::*;
+
+    #[derive(Serialize)]
+    pub struct UserId {
+        pub id: Uuid,
+    }
+
+    #[derive(Serialize)]
+    pub struct JoinRoom {
+        pub room: String,
+        pub id: Uuid,
+    }
+}
+
 pub struct Lobby {
-    pub sessions: HashMap<Uuid, Socket>,     // self id to self
-    pub rooms: HashMap<Uuid, HashSet<Uuid>>, // room id to list of users id
+    /// self id -> self mail box
+    pub sessions: HashMap<Uuid, Socket>,
+    /// room id -> list of users id
+    pub rooms: HashMap<String, HashSet<Uuid>>,
 }
 
 impl Default for Lobby {
@@ -23,12 +46,19 @@ impl Default for Lobby {
 impl Lobby {
     fn send_message(&self, message: &str, id_to: &Uuid) {
         if let Some(socket_recipient) = self.sessions.get(id_to) {
-          socket_recipient.do_send(WebSocketMessage(message.to_owned()));
+            socket_recipient.do_send(WebSocketMessage(message.to_owned()));
         } else {
-            println!("List : {:?}", self.sessions);
-            println!("id : {}", id_to);
             eprintln!("Attempting to send message but couldn't find user id.");
         }
+    }
+
+    fn send_event<T: Serialize>(&self, event: &str, data: T, id_to: &Uuid) {
+        let event = EventMessage {
+            event: String::from(event),
+            data,
+            targets: vec![],
+        };
+        self.send_message(&json!(event).to_string(), id_to);
     }
 }
 
@@ -40,22 +70,36 @@ impl Handler<Disconnect> for Lobby {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Self::Context) -> Self::Result {
-        if self.sessions.remove(&msg.id).is_none() {
-            self.rooms
-                .get(&msg.room_id)
-                .unwrap()
+        if self.sessions.remove(&msg.id).is_some() {
+            // retrieve rooms holding msg.id
+            let rooms: Vec<String> = self
+                .rooms
                 .iter()
-                .filter(|conn_id| *conn_id.to_owned() != msg.id)
-                .for_each(|user_id| {
-                    self.send_message(&format!("{} disconnected.", &msg.id), user_id)
-                });
+                .filter(|(_, v)| v.contains(&msg.id))
+                .map(|(k, _)| k.clone())
+                .collect();
 
-            if let Some(lobby) = self.rooms.get_mut(&msg.room_id) {
-                if lobby.len() > 1 {
-                    lobby.remove(&msg.id);
-                } else {
-                    // Only one in the lobby, remove it entirely
-                    self.rooms.remove(&msg.room_id);
+            let mut roommates: Vec<Uuid> = vec![];
+            for room in rooms.iter() {
+                for id in self.rooms.get(room).unwrap() {
+                    if id != &msg.id {
+                        roommates.push(id.clone());
+                    }
+                }
+            }
+
+            for id_to in roommates {
+                self.send_event("disconnection", datas::UserId { id: msg.id }, &id_to);
+            }
+
+            for room in rooms {
+                if let Some(lobby) = self.rooms.get_mut(&room) {
+                    if lobby.len() > 1 {
+                        lobby.remove(&msg.id);
+                    } else {
+                        // Only one in the lobby, remove it entirely
+                        self.rooms.remove(&room);
+                    }
                 }
             }
         }
@@ -66,27 +110,21 @@ impl Handler<Connect> for Lobby {
     type Result = ();
 
     fn handle(&mut self, msg: Connect, _: &mut Self::Context) -> Self::Result {
-        // Create a room if necessary, and then add the id to it
+        let global = String::new();
+
+        // Create a room with "empty" name, all client belong there by default
         self.rooms
-            .entry(msg.lobby_id)
+            .entry(global.clone())
             .or_insert(HashSet::new())
             .insert(msg.self_id);
 
-        // Send to everyone in the room that new uuid just joined
-        self.rooms
-            .get(&msg.lobby_id)
-            .unwrap()
-            .iter()
-            .filter(|conn_id| *conn_id.to_owned() != msg.self_id)
-            .for_each(|conn_id| {
-                self.send_message(&format!("{} just joined!", msg.self_id), conn_id)
-            });
+        // Send to everyone in the global room that new uuid just joined
+        self.rooms.get(&global).unwrap().iter().for_each(|conn_id| {
+            self.send_event("connection", datas::UserId { id: msg.self_id }, conn_id);
+        });
 
         // Store the address
         self.sessions.insert(msg.self_id, msg.addr);
-
-        // Send self your new uuid
-        self.send_message(&format!("Your id is {}", msg.self_id), &msg.self_id);
     }
 }
 
@@ -94,16 +132,43 @@ impl Handler<ClientActorMessage> for Lobby {
     type Result = ();
 
     fn handle(&mut self, msg: ClientActorMessage, _: &mut Self::Context) -> Self::Result {
-        if msg.msg.starts_with("\\w") {
-            if let Some(id_to) = msg.msg.split(' ').collect::<Vec<&str>>().get(1) {
-                self.send_message(&msg.msg, &Uuid::parse_str(id_to).unwrap());
+        if let Ok(event) = serde_json::from_str::<EventMessage<String>>(&msg.msg) {
+            if event.targets.is_empty() {
+                let rooms: Vec<String> = self
+                    .rooms
+                    .iter()
+                    .filter(|(_, v)| v.contains(&msg.id))
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                for room in rooms {
+                    if let Some(users) = self.rooms.get(&room) {
+                        for target_id in users {
+                            if *target_id != msg.id {
+                                self.send_event(&event.event, event.data.clone(), target_id);
+                            }
+                        }
+                    }
+                }
+            } else {
+                for target in event.targets {
+                    if let Ok(target_id) = Uuid::from_str(&target) {
+                        // client ID
+                        self.send_event(&event.event, event.data.clone(), &target_id);
+                    } else {
+                        // room name
+                        let room = target;
+                        if let Some(users) = self.rooms.get(&room) {
+                            for target_id in users {
+                                if *target_id != msg.id {
+                                    self.send_event(&event.event, event.data.clone(), target_id);
+                                }
+                            }
+                        }
+                    }
+                }
             }
         } else {
-            self.rooms
-                .get(&msg.room_id)
-                .unwrap()
-                .iter()
-                .for_each(|client| self.send_message(&msg.msg, client));
+            eprintln!("Bad event type.");
         }
     }
 }

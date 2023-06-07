@@ -7,3 +7,38 @@ form {
 input {
   flex-grow: 0.5;
 }
+
+.messages {
+  margin-top: 2rem;
+  max-height: 540px;
+  overflow-y: auto;
+}
+
+ul {
+  list-style: none;
+  padding: 0 2rem;
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  } to {
+    opacity: 1;
+  }
+}
+
+li {
+  display: flex;
+}
+
+.message {
+  background: rgb(67, 67, 67);
+  margin: 0.5rem;
+  padding: 1rem;
+  border-radius: 10px;
+  animation: appear 500ms both;
+}
+
+.right {
+  justify-content: flex-end;
+}

@@ -18,16 +18,14 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct WebSocketConn {
-    room: Uuid,
     lobby_addr: Addr<Lobby>,
     hb: Instant,
     id: Uuid,
 }
 
 impl WebSocketConn {
-    pub fn new(room: Uuid, lobby: Addr<Lobby>) -> WebSocketConn {
+    pub fn new(lobby: Addr<Lobby>) -> WebSocketConn {
         WebSocketConn {
-            room,
             lobby_addr: lobby,
             hb: Instant::now(),
             id: Uuid::new_v4(),
@@ -40,8 +38,7 @@ impl WebSocketConn {
                 if Instant::now().duration_since(actor.hb) > CLIENT_TIMEOUT {
                     println!("Disconnecting failed heartbeat");
                     actor.lobby_addr.do_send(Disconnect {
-                        id: actor.id,
-                        room_id: actor.room,
+                        id: actor.id
                     });
                     ctx.stop();
                     return;
@@ -63,7 +60,6 @@ impl Actor for WebSocketConn {
         self.lobby_addr
             .send(Connect {
                 addr: addr.recipient(),
-                lobby_id: self.room,
                 self_id: self.id,
             })
             .into_actor(self)
@@ -80,7 +76,6 @@ impl Actor for WebSocketConn {
     fn stopping(&mut self, _: &mut Self::Context) -> actix::Running {
         self.lobby_addr.do_send(Disconnect {
             id: self.id,
-            room_id: self.room,
         });
         Running::Stop
     }
@@ -108,7 +103,6 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketConn {
             Ok(ws::Message::Text(s)) => self.lobby_addr.do_send(ClientActorMessage {
                 id: self.id,
                 msg: s.to_string(),
-                room_id: self.room,
             }),
             Err(e) => panic!("{e}"),
         }
