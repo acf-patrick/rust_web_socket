@@ -118,13 +118,11 @@ impl Handler<Connect> for Lobby {
             .or_insert(HashSet::new())
             .insert(msg.self_id);
 
-        // Send to everyone in the global room that new uuid just joined
-        self.rooms.get(&global).unwrap().iter().for_each(|conn_id| {
-            self.send_event("connection", datas::UserId { id: msg.self_id }, conn_id);
-        });
-
         // Store the address
         self.sessions.insert(msg.self_id, msg.addr);
+
+        // Send to connection response to client
+        self.send_event("connection", datas::UserId { id: msg.self_id }, &msg.self_id);
     }
 }
 

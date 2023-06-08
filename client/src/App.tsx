@@ -1,16 +1,24 @@
-import { socket } from "./socket";
+import { WebSocketConnection } from "./socket";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+
+const socket = new WebSocketConnection("ws://localhost:8080/ws");
+
+type Message = {
+  text: string;
+  incoming: boolean;
+};
 
 function App() {
   const [isConnected, setIsConnected] = useState(false);
 
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const onConnect = () => {
       setIsConnected(true);
+      console.log(socket.getId());
     };
 
     const onDisconnect = () => {
@@ -18,7 +26,10 @@ function App() {
     };
 
     const onMessage = (message: string) => {
-      setMessages((messages) => [...messages, message]);
+      setMessages((messages) => [
+        ...messages,
+        { text: message, incoming: true },
+      ]);
     };
 
     socket.on("connection", onConnect);
@@ -44,8 +55,9 @@ function App() {
     const input: HTMLInputElement = event.currentTarget.message;
     const message = input.value;
     if (message) {
-      setMessages([...messages, message]);
+      setMessages([...messages, { text: message, incoming: false }]);
       socket.emit("message", message);
+      input.value = "";
     }
   };
 
@@ -56,19 +68,39 @@ function App() {
     setMessages([]);
   };
 
+  const connectionButtonOnClick = (connected: boolean) => {
+    if (connected) {
+      socket.disconnect();
+    } else {
+      socket.reconnect();
+    }
+  };
+
   return (
     <div>
-      <form onSubmit={onSubmit}>
-        <input type="text" name="message" />
-        <button type="submit">send</button>
-        <button onClick={clearButtonOnClick}>clear</button>
-      </form>
+      <header>
+        <form onSubmit={onSubmit}>
+          <input type="text" name="message" />
+          <button type="submit">send</button>
+          <button onClick={clearButtonOnClick}>clear</button>
+        </form>
+        <button
+          className="connection-btn"
+          onClick={(e) => {
+            e.preventDefault();
+            connectionButtonOnClick(isConnected);
+          }}
+        >
+          {isConnected ? "disconnect" : "connect"}
+          <span>{isConnected ? "✔️" : "❌"}</span>
+        </button>
+      </header>
       {messages.length ? (
         <div className="messages" ref={containerRef}>
           <ul>
             {messages.map((message, i) => (
-              <li key={i} className={i % 2 ? "right" : ""}>
-                <p className="message">{message}</p>
+              <li key={i} className={message.incoming ? "right" : ""}>
+                <p className="message">{message.text}</p>
               </li>
             ))}
           </ul>

@@ -1,11 +1,18 @@
-form {
+header, form {
   display: flex;
   gap: 1rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+form {
+  flex-grow: 0.75;
   justify-content: center;
 }
 
 input {
   flex-grow: 0.5;
+  padding: 0.5rem 1rem;
 }
 
 .messages {
@@ -41,4 +48,14 @@ li {
 
 .right {
   justify-content: flex-end;
+}
+
+.connection-btn {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.connection-btn>span {
+  padding-left: 0.5rem;
+  border-left: solid 1px grey;
 }

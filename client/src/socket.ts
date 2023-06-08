@@ -6,22 +6,41 @@ type Event = {
 
 type Callback = (data?: any) => void;
 
-class SocketConnection {
-  private socket: WebSocket;
+class WebSocketConnection {
+  private socket: WebSocket | null = null;
   private targets: string[];
   private callbacks: Map<string, Set<Callback>>; // event -> callback list
   private oneTimeCallbacks: Map<string, Set<Callback>>; // event -> callback list
-  private id: string = "";
+  private id = "";
+  private reservedEvent = ["connection", "disconnection", "join", "leave"];
+  private lastUrl = "";
 
   constructor(url: string) {
-    this.socket = new WebSocket(url);
     this.targets = [];
     this.callbacks = new Map();
     this.oneTimeCallbacks = new Map();
 
-    this.once("connection", (data: { id: string }) => {
+    this.on("connection", (data: { id: string }) => {
       this.id = data.id;
     });
+
+    this.connect(url);
+  }
+
+  disconnect() {
+    this.id = "";
+    this.socket?.close();
+  }
+
+  reconnect() {
+    this.connect(this.lastUrl);
+  }
+
+  connect(url: string) {
+    this.socket?.close();
+
+    this.socket = new WebSocket(url);
+    this.lastUrl = url;
 
     this.socket.onclose = () => {
       let callbacks = this.callbacks.get("disconnection");
@@ -43,25 +62,23 @@ class SocketConnection {
         const msg: Event = JSON.parse(event.data);
         const eventType = msg.event;
 
-        // handle in method 'onclose'
+        // handled in method 'onclose'
         if (eventType === "disconnection") return;
 
-        {
-          const callbacks = this.callbacks.get(eventType);
-          if (callbacks) {
-            for (const callback of callbacks) {
-              callback(msg.data);
-            }
-          }
-        }
-
-        const callbacks = this.oneTimeCallbacks.get(eventType);
+        let callbacks = this.oneTimeCallbacks.get(eventType);
         if (callbacks) {
           for (const callback of callbacks) {
             callback(msg.data);
           }
         }
         this.oneTimeCallbacks.delete(eventType);
+
+        callbacks = this.callbacks.get(eventType);
+        if (callbacks) {
+          for (const callback of callbacks) {
+            callback(msg.data);
+          }
+        }
       } catch (e) {
         console.error(e);
       }
@@ -73,19 +90,31 @@ class SocketConnection {
     return this;
   }
 
-  emit(event: string, data: any) {
-    if (event === "disconnection" || event === "connection") {
-      console.error("Not allowed to emit this event.");
-      return;
-    }
+  join(room: string) {
 
-    const msg: Event = {
-      event: event,
-      data: data,
-      targets: this.targets,
-    };
-    this.socket.send(JSON.stringify(msg));
-    this.targets = [];
+  }
+
+  leave(room: string) {
+    
+  }
+
+  emit(event: string, data: any) {
+    if (this.socket) {
+      if (this.reservedEvent.indexOf(event) >= 0) {
+        console.error("Not allowed to emit this event.");
+        return;
+      }
+
+      const msg: Event = {
+        event: event,
+        data: data,
+        targets: this.targets,
+      };
+      this.socket.send(JSON.stringify(msg));
+      this.targets = [];
+    } else {
+      throw Error("Disconnected to web socket server.");
+    }
   }
 
   once(event: string, callback: Callback) {
@@ -121,6 +150,4 @@ class SocketConnection {
   }
 }
 
-const socket = new SocketConnection("ws://localhost:8080/ws");
-
-export { socket };
+export { WebSocketConnection };
