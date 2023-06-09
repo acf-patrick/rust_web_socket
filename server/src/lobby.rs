@@ -5,7 +5,7 @@ use std::{
 
 use crate::messages::{ClientActorMessage, Connect, Disconnect, EventMessage, WebSocketMessage};
 use actix::{Actor, Context, Handler, Recipient};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -20,8 +20,14 @@ mod datas {
         pub id: Uuid,
     }
 
+    #[derive(Deserialize)]
+    pub struct Room {
+        #[serde(rename = "room")]
+        pub name: String,
+    }
+
     #[derive(Serialize)]
-    pub struct JoinRoom {
+    pub struct RoomEventData {
         pub room: String,
         pub id: Uuid,
     }
@@ -122,7 +128,11 @@ impl Handler<Connect> for Lobby {
         self.sessions.insert(msg.self_id, msg.addr);
 
         // Send to connection response to client
-        self.send_event("connection", datas::UserId { id: msg.self_id }, &msg.self_id);
+        self.send_event(
+            "connection",
+            datas::UserId { id: msg.self_id },
+            &msg.self_id,
+        );
     }
 }
 
@@ -130,35 +140,111 @@ impl Handler<ClientActorMessage> for Lobby {
     type Result = ();
 
     fn handle(&mut self, msg: ClientActorMessage, _: &mut Self::Context) -> Self::Result {
-        if let Ok(event) = serde_json::from_str::<EventMessage<String>>(&msg.msg) {
-            if event.targets.is_empty() {
-                let rooms: Vec<String> = self
-                    .rooms
-                    .iter()
-                    .filter(|(_, v)| v.contains(&msg.id))
-                    .map(|(k, _)| k.clone())
-                    .collect();
-                for room in rooms {
-                    if let Some(users) = self.rooms.get(&room) {
-                        for target_id in users {
-                            if *target_id != msg.id {
-                                self.send_event(&event.event, event.data.clone(), target_id);
+        if let Ok(event) = serde_json::from_str::<EventMessage<serde_json::Value>>(&msg.msg) {
+            match event.event.as_str() {
+                "join" => {
+                    if let Ok(room) = serde_json::from_str::<datas::Room>(&event.data.to_string()) {
+                        let room_name = room.name;
+                        if !room_name.is_empty() {
+                            let global = self.rooms.get_mut("").unwrap();
+                            global.remove(&msg.id);
+
+                            self.rooms
+                                .entry(room_name.clone())
+                                .or_insert(HashSet::new())
+                                .insert(msg.id);
+
+                            let room = self.rooms.get(&room_name).unwrap();
+                            for id in room.iter() {
+                                if *id != msg.id {
+                                    let data = datas::RoomEventData {
+                                        id: msg.id.clone(),
+                                        room: room_name.clone(),
+                                    };
+                                    self.send_event("join", data, id);
+                                }
                             }
+                        }
+                    } else {
+                        eprintln!("Bad event data type.");
+                    }
+                }
+                "leave" => {
+                    // list of rooms the user belong to
+                    let mut rooms: Vec<String> = vec![];
+                    let data = event.data.to_string();
+
+                    if data.is_empty() {
+                        // leave all rooms
+                        rooms = self
+                            .rooms
+                            .iter()
+                            .filter(|(_, v)| v.contains(&msg.id))
+                            .map(|(k, _)| k.clone())
+                            .collect();
+                    } else {
+                        if let Ok(room) = serde_json::from_str::<datas::Room>(&data) {
+                            if self.rooms.contains_key(&room.name) {
+                                // insure that requested room exists
+                                rooms.push(room.name);
+                            }
+                        } else {
+                            eprintln!("Bad event data type.");
+                        }
+                    }
+
+                    for room_name in rooms {
+                        {
+                            let room = self.rooms.get_mut(&room_name).unwrap();
+                            room.remove(&msg.id);
+                        }
+
+                        for id in self.rooms.get(&room_name).unwrap().iter() {
+                            let data = datas::RoomEventData {
+                                id: msg.id.clone(),
+                                room: room_name.clone(),
+                            };
+                            self.send_event("leave", data, id);
                         }
                     }
                 }
-            } else {
-                for target in event.targets {
-                    if let Ok(target_id) = Uuid::from_str(&target) {
-                        // client ID
-                        self.send_event(&event.event, event.data.clone(), &target_id);
-                    } else {
-                        // room name
-                        let room = target;
+                _ => {}
+            }
+
+            if event.event != "join" && event.event != "leave" {
+                if event.targets.is_empty() {
+                    let rooms: Vec<String> = self
+                        .rooms
+                        .iter()
+                        .filter(|(_, v)| v.contains(&msg.id))
+                        .map(|(k, _)| k.clone())
+                        .collect();
+                    for room in rooms {
                         if let Some(users) = self.rooms.get(&room) {
                             for target_id in users {
                                 if *target_id != msg.id {
                                     self.send_event(&event.event, event.data.clone(), target_id);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for target in event.targets {
+                        if let Ok(target_id) = Uuid::from_str(&target) {
+                            // client ID
+                            self.send_event(&event.event, event.data.clone(), &target_id);
+                        } else {
+                            // room name
+                            let room = target;
+                            if let Some(users) = self.rooms.get(&room) {
+                                for target_id in users {
+                                    if *target_id != msg.id {
+                                        self.send_event(
+                                            &event.event,
+                                            event.data.clone(),
+                                            target_id,
+                                        );
+                                    }
                                 }
                             }
                         }

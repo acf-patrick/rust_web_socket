@@ -30,6 +30,7 @@ class WebSocketConnection {
   disconnect() {
     this.id = "";
     this.socket?.close();
+    this.socket = null;
   }
 
   reconnect() {
@@ -91,20 +92,15 @@ class WebSocketConnection {
   }
 
   join(room: string) {
-
+    this.upgradedEmit("join", { room: room });
   }
 
-  leave(room: string) {
-    
+  leave(room?: string) {
+    this.upgradedEmit("leave", room ? { room: room } : null);
   }
 
-  emit(event: string, data: any) {
+  private upgradedEmit(event: string, data: any) {
     if (this.socket) {
-      if (this.reservedEvent.indexOf(event) >= 0) {
-        console.error("Not allowed to emit this event.");
-        return;
-      }
-
       const msg: Event = {
         event: event,
         data: data,
@@ -115,6 +111,15 @@ class WebSocketConnection {
     } else {
       throw Error("Disconnected to web socket server.");
     }
+  }
+
+  emit(event: string, data: any) {
+    if (this.reservedEvent.indexOf(event) >= 0) {
+      console.error("Not allowed to emit this event.");
+      return;
+    }
+
+    this.upgradedEmit(event, data);
   }
 
   once(event: string, callback: Callback) {

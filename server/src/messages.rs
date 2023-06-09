@@ -1,6 +1,5 @@
 use actix::{Message, Recipient};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use uuid::Uuid;
 
 /// WebSocketConn responds to this to pipe it through to the actual client
@@ -31,7 +30,7 @@ pub struct ClientActorMessage {
     pub msg: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct EventMessage<T> {
     pub event: String,
     pub data: T,

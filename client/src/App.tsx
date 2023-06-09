@@ -9,16 +9,42 @@ type Message = {
   incoming: boolean;
 };
 
+type RoomEventData = {
+  id: string;
+  room: string;
+};
+
+let intervalHandle = -1;
+
 function App() {
   const [isConnected, setIsConnected] = useState(false);
-
   const [messages, setMessages] = useState<Message[]>([]);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [rooms, setRooms] = useState<string[]>([]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const roomInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isConnected) {
+      intervalHandle = setInterval(() => {
+        socket.reconnect();
+        console.log("reconnecting...");
+      }, 3000);
+    } else {
+      clearInterval(intervalHandle);
+      intervalHandle = -1;
+    }
+
+    return () => {
+      clearInterval(intervalHandle);
+      intervalHandle = -1;
+    };
+  }, [isConnected]);
 
   useEffect(() => {
     const onConnect = () => {
+      console.log(`Connected with ID : ${socket.getId()}`);
       setIsConnected(true);
-      console.log(socket.getId());
     };
 
     const onDisconnect = () => {
@@ -32,14 +58,26 @@ function App() {
       ]);
     };
 
-    socket.on("connection", onConnect);
-    socket.on("disconnection", onDisconnect);
-    socket.on("message", onMessage);
+    const onJoinRoom = (data: RoomEventData) => {
+      console.log(data);
+    };
+
+    const onLeaveRoom = (data: RoomEventData) => {
+      console.log(data);
+    };
+
+    const callbacks: { [key: string]: any } = {
+      connection: onConnect,
+      disconnection: onDisconnect,
+      join: onJoinRoom,
+      leave: onLeaveRoom,
+      message: onMessage,
+    };
+
+    for (const event in callbacks) socket.on(event, callbacks[event]);
 
     return () => {
-      socket.off("connection", onConnect);
-      socket.off("disconnection", onDisconnect);
-      socket.off("message", onMessage);
+      for (const event in callbacks) socket.off(event, callbacks[event]);
     };
   }, []);
 
@@ -76,13 +114,52 @@ function App() {
     }
   };
 
+  const roomOnSubmit = (room: string, join: boolean) => {
+    if (join) {
+      socket.join(room);
+      setRooms((rooms) => [...rooms, room]);
+    } else {
+      socket.leave(room);
+      setRooms((rooms) => rooms.filter((r) => r !== room));
+    }
+  };
+
   return (
     <div>
       <header>
-        <form onSubmit={onSubmit}>
+        <form className="room-input" onSubmit={(e) => e.preventDefault()}>
+          <input type="text" ref={roomInputRef} />
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              const input = roomInputRef.current;
+              if (input) {
+                roomOnSubmit(input.value, true);
+              }
+            }}
+          >
+            join
+          </button>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              const input = roomInputRef.current;
+              if (input) {
+                roomOnSubmit(input.value, false);
+              }
+            }}
+          >
+            leave
+          </button>
+        </form>
+        <form className="message-input" onSubmit={onSubmit}>
           <input type="text" name="message" />
-          <button type="submit">send</button>
-          <button onClick={clearButtonOnClick}>clear</button>
+          <button title="send message" type="submit">
+            ✉️
+          </button>
+          <button title="clear messages" onClick={clearButtonOnClick}>
+            🛇
+          </button>
         </form>
         <button
           className="connection-btn"
@@ -91,7 +168,8 @@ function App() {
             connectionButtonOnClick(isConnected);
           }}
         >
-          {isConnected ? "disconnect" : "connect"}
+          <span>{isConnected ? "disconnect" : "connect"}</span>
+          <div className="pipe"></div>
           <span>{isConnected ? "✔️" : "❌"}</span>
         </button>
       </header>
