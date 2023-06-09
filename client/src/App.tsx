@@ -114,45 +114,31 @@ function App() {
     }
   };
 
-  const roomOnSubmit = (room: string, join: boolean) => {
-    if (join) {
-      socket.join(room);
-      setMessages([]);
-      setRooms((rooms) => [...rooms, room]);
-    } else {
-      socket.leave(room);
-      setRooms((rooms) => rooms.filter((r) => r !== room));
-    }
+  const joinRoom = (room: string) => {
+    socket.join(room);
+    setMessages([]);
+    setRooms((rooms) => [...rooms, room]);
   };
 
   return (
     <div>
       <header>
-        <form className="room-input" onSubmit={(e) => e.preventDefault()}>
-          <input type="text" ref={roomInputRef} />
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              const input = roomInputRef.current;
-              if (input) {
-                roomOnSubmit(input.value, true);
-              }
-            }}
-          >
-            join
-          </button>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              const input = roomInputRef.current;
-              if (input) {
-                roomOnSubmit(input.value, false);
-              }
-            }}
-          >
-            leave
-          </button>
+        <form
+          className="room-input"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const input: HTMLInputElement = e.currentTarget.input;
+            joinRoom(input.value);
+          }}
+        >
+          <input name="input" type="text" ref={roomInputRef} />
+          <button>🔗</button>
         </form>
+        <select>
+          {rooms.map((room, i) => {
+            
+          })}
+        </select>
         <form className="message-input" onSubmit={onSubmit}>
           <input type="text" name="message" />
           <button title="send message" type="submit">
