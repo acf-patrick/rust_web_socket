@@ -2,7 +2,7 @@ import { WebSocketConnection } from "./socket";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
-const socket = new WebSocketConnection("ws://localhost:8080/ws");
+const socket = new WebSocketConnection("ws://10.13.104.216:8080/ws");
 
 type Message = {
   text: string;
@@ -117,6 +117,7 @@ function App() {
   const roomOnSubmit = (room: string, join: boolean) => {
     if (join) {
       socket.join(room);
+      setMessages([]);
       setRooms((rooms) => [...rooms, room]);
     } else {
       socket.leave(room);
