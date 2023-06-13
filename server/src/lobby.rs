@@ -149,20 +149,23 @@ impl Handler<ClientActorMessage> for Lobby {
                             let global = self.rooms.get_mut("").unwrap();
                             global.remove(&msg.id);
 
-                            self.rooms
+                            let room = self.rooms
                                 .entry(room_name.clone())
-                                .or_insert(HashSet::new())
-                                .insert(msg.id);
+                                .or_insert(HashSet::new());
+                            if !room.contains(&msg.id) {
+                              room.insert(msg.id);
+                              println!("{} joined {}", msg.id, room_name);
 
-                            let room = self.rooms.get(&room_name).unwrap();
-                            for id in room.iter() {
-                                if *id != msg.id {
-                                    let data = datas::RoomEventData {
-                                        id: msg.id.clone(),
-                                        room: room_name.clone(),
-                                    };
-                                    self.send_event("join", data, id);
-                                }
+                              let room = self.rooms.get(&room_name).unwrap();
+                              for id in room.iter() {
+                                  if *id != msg.id {
+                                      let data = datas::RoomEventData {
+                                          id: msg.id.clone(),
+                                          room: room_name.clone(),
+                                      };
+                                      self.send_event("join", data, id);
+                                  }
+                              }
                             }
                         }
                     } else {
@@ -197,6 +200,7 @@ impl Handler<ClientActorMessage> for Lobby {
                         {
                             let room = self.rooms.get_mut(&room_name).unwrap();
                             room.remove(&msg.id);
+                            println!("{} left {}", msg.id, room_name);
                         }
 
                         for id in self.rooms.get(&room_name).unwrap().iter() {

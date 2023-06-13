@@ -19,10 +19,15 @@ let intervalHandle = -1;
 function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [rooms, setRooms] = useState<string[]>([]);
+  const [rooms, setRooms] = useState<
+    {
+      name: string;
+      target: boolean;
+    }[]
+  >([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const roomInputRef = useRef<HTMLInputElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isConnected) {
@@ -49,6 +54,7 @@ function App() {
 
     const onDisconnect = () => {
       setIsConnected(false);
+      setRooms([]);
     };
 
     const onMessage = (message: string) => {
@@ -59,7 +65,7 @@ function App() {
     };
 
     const onJoinRoom = (data: RoomEventData) => {
-      console.log(data);
+      // console.log(data);
     };
 
     const onLeaveRoom = (data: RoomEventData) => {
@@ -94,7 +100,16 @@ function App() {
     const message = input.value;
     if (message) {
       setMessages([...messages, { text: message, incoming: false }]);
-      socket.emit("message", message);
+
+      let send = false;
+      rooms.forEach((room) => {
+        if (room.target) {
+          send = true;
+          socket.to(room.name);
+        }
+      });
+      if (send) socket.emit("message", message);
+
       input.value = "";
     }
   };
@@ -117,12 +132,27 @@ function App() {
   const joinRoom = (room: string) => {
     socket.join(room);
     setMessages([]);
-    setRooms((rooms) => [...rooms, room]);
+    setRooms((rooms) =>
+      rooms.find((r) => r.name === room)
+        ? rooms
+        : [...rooms, { name: room, target: true }]
+    );
   };
 
   return (
-    <div>
-      <header>
+    <div id="app-container">
+      <div className="rooms" ref={sidebarRef}>
+        <button
+          className="close"
+          onClick={() => {
+            const sidebar = sidebarRef.current;
+            if (sidebar) {
+              sidebar.style.transform = "translateX(-120%)";
+            }
+          }}
+        >
+          ❌
+        </button>
         <form
           className="room-input"
           onSubmit={(e) => {
@@ -131,48 +161,107 @@ function App() {
             joinRoom(input.value);
           }}
         >
-          <input name="input" type="text" ref={roomInputRef} />
-          <button>🔗</button>
+          <input name="input" type="text" placeholder="Join a room" />
+          <button id="join">🔗</button>
         </form>
-        <select>
-          {rooms.map((room, i) => {
-            
-          })}
-        </select>
-        <form className="message-input" onSubmit={onSubmit}>
-          <input type="text" name="message" />
-          <button title="send message" type="submit">
-            ✉️
+        <p>Joined rooms 🏠</p>
+        <ul>
+          {rooms.map((room, i) => (
+            <li key={i}>
+              <div className="room">
+                <label
+                  className="name"
+                  title="Select as target"
+                  htmlFor={`${i}`}
+                >
+                  {room.name}
+                </label>
+                <input
+                  type="checkbox"
+                  name="used"
+                  id={`${i}`}
+                  checked={room.target}
+                  onChange={(e) => {
+                    setRooms((r) => {
+                      const rooms = r.map((room) => {
+                        return { name: room.name, target: room.target };
+                      });
+                      const room = rooms[i];
+                      room.target = !room.target;
+                      return [...rooms];
+                    });
+                  }}
+                />
+                <button
+                  onClick={(e) => {
+                    const parent = e.currentTarget.parentElement;
+                    parent?.classList.toggle("disappear", true);
+
+                    setTimeout(() => {
+                      parent?.classList.toggle("disappear", false);
+                      socket.leave(room.name);
+                      setRooms((rooms) =>
+                        rooms.filter((r) => r.name !== room.name)
+                      );
+                    }, 500);
+                  }}
+                  title="Leave"
+                >
+                  🏃🏽‍♂️
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <main>
+        <header>
+          <button
+            className="room-menu"
+            onClick={() => {
+              const sidebar = sidebarRef.current;
+              if (sidebar) {
+                sidebar.style.transform = "translateX(0)";
+              }
+            }}
+          >
+            🏘️
           </button>
-          <button title="clear messages" onClick={clearButtonOnClick}>
-            🛇
+          <form className="message-input" onSubmit={onSubmit}>
+            <input type="text" name="message" />
+            <button title="send message" type="submit">
+              ✉️
+            </button>
+            <button title="clear messages" onClick={clearButtonOnClick}>
+              🛇
+            </button>
+          </form>
+          <button
+            className="connection-btn"
+            onClick={(e) => {
+              e.preventDefault();
+              connectionButtonOnClick(isConnected);
+            }}
+          >
+            <span>{isConnected ? "disconnect" : "connect"}</span>
+            <div className="pipe"></div>
+            <span>{isConnected ? "✔️" : "❌"}</span>
           </button>
-        </form>
-        <button
-          className="connection-btn"
-          onClick={(e) => {
-            e.preventDefault();
-            connectionButtonOnClick(isConnected);
-          }}
-        >
-          <span>{isConnected ? "disconnect" : "connect"}</span>
-          <div className="pipe"></div>
-          <span>{isConnected ? "✔️" : "❌"}</span>
-        </button>
-      </header>
-      {messages.length ? (
-        <div className="messages" ref={containerRef}>
-          <ul>
-            {messages.map((message, i) => (
-              <li key={i} className={message.incoming ? "right" : ""}>
-                <p className="message">{message.text}</p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p>No message</p>
-      )}
+        </header>
+        {messages.length ? (
+          <div className="messages" ref={containerRef}>
+            <ul>
+              {messages.map((message, i) => (
+                <li key={i} className={message.incoming ? "right" : ""}>
+                  <p className="message">{message.text}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p>No message</p>
+        )}
+      </main>
     </div>
   );
 }

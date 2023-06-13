@@ -106,6 +106,7 @@ class WebSocketConnection {
         data: data,
         targets: this.targets,
       };
+      console.log(msg);
       this.socket.send(JSON.stringify(msg));
       this.targets = [];
     } else {
