@@ -64,7 +64,7 @@ function App() {
       ]);
     };
 
-    const onJoinRoom = (data: RoomEventData) => {
+    const onJoinRoom = () => {
       // console.log(data);
     };
 
@@ -181,7 +181,7 @@ function App() {
                   name="used"
                   id={`${i}`}
                   checked={room.target}
-                  onChange={(e) => {
+                  onChange={() => {
                     setRooms((r) => {
                       const rooms = r.map((room) => {
                         return { name: room.name, target: room.target };
